@@ -81,12 +81,22 @@ $ docker compose build web
 Перед развёртыванием Django в Kubernetes убедитесь, что запущен контейнер с PostgreSQL, к которому будет подключаться приложение. Выполните в терминале:
 
 ```bash
+# powershell
+docker run -d --name postgres-local -p 5432:5432 `
+  -e POSTGRES_DB=test_k8s `
+  -e POSTGRES_USER=test_k8s `
+  -e POSTGRES_PASSWORD=OwOtBep9Frut `
+  postgres:12.0-alpine
+
+# Linux/macOS
 docker run -d --name postgres-local -p 5432:5432 \
   -e POSTGRES_DB=test_k8s \
   -e POSTGRES_USER=test_k8s \
   -e POSTGRES_PASSWORD=OwOtBep9Frut \
   postgres:12.0-alpine
 ```
+
+*Здесь используются тестовые учётные данные. При желании вы можете изменить их, но тогда не забудьте указать те же значения в секрете*
 
 Если контейнер уже создан, но остановлен, запустите его:
 
@@ -97,6 +107,30 @@ docker start postgres-local
 ### Настройка секретов
 
 Перед применением манифестов необходимо создать Secret с конфиденциальными данными. Это можно сделать двумя способами:
+
+*IP Minikube можно узнать командой `minikube ip`*
+*Для подключения к PostgreSQL, запущенному на хосте, используйте IP-адрес шлюза Minikube. Его можно узнать командой:*
+
+```bash
+minikube ssh "ip route show default | awk '{print $3}'"
+```
+
+Эта команда выведет IP шлюза (например, 192.168.49.1 для драйвера Docker или 192.168.59.1 для VirtualBox).
+*Примечание для Windows*: если команда не сработает, вы можете зайти в Minikube вручную:
+
+```bash
+minikube ssh
+```
+
+Затем внутри виртуальной машины выполните:
+
+```bash
+ip route show default
+```
+
+Найдите строку, начинающуюся с default via, и скопируйте следующий за ней IP-адрес. Выйдите из ssh командой exit.
+
+*В примерах замените <host-ip> на этот адрес (обычно 192.168.49.1 для драйвера Docker или 192.168.59.1 для VirtualBox).*
 
 **Вариант 1 (через файл, не коммитить):**
 
@@ -109,18 +143,16 @@ docker start postgres-local
 ```bash
 kubectl create secret generic django-secrets \
   --from-literal=SECRET_KEY="your-secret-key" \
-  --from-literal=DATABASE_URL="postgres://user:password@host:port/dbname"
-  --from-literal=ALLOWED_HOSTS="localhost,127.0.0.1,<minikube-ip>"
+  --from-literal=DATABASE_URL="postgres://test_k8s:OwOtBep9Frut@<host-ip>:5432/test_k8s" \
+  --from-literal=ALLOWED_HOSTS="localhost,127.0.0.1,<minikube-ip>,star-burger.test"
 
 # для powershell
 
 kubectl create secret generic django-secrets `
   --from-literal=SECRET_KEY="your-secret-key" `
-  --from-literal=DATABASE_URL="postgres://user:password@host:port/dbname" `
-  --from-literal=ALLOWED_HOSTS="localhost,127.0.0.1,<minikube-ip>"
+  --from-literal=DATABASE_URL="postgres://test_k8s:OwOtBep9Frut@<host-ip>:5432/test_k8s" `
+  --from-literal=ALLOWED_HOSTS="localhost,127.0.0.1,<minikube-ip>,star-burger.test"
 ```
-
-*IP Minikube можно узнать командой `minikube ip`*
 
 2. Примените манифесты:
 
@@ -135,3 +167,132 @@ kubectl apply -f service.yaml
 minikube service django-service
 ```
 
+## Развёртывание в Kubernetes с Ingress
+
+**Предварительные требования:**
+
+- Установленный гипервизор или контейнерный движок (например, Docker Desktop или VirtualBox) в зависимости от выбранного драйвера Minikube
+- Minikube и kubectl
+- Запущенный контейнер PostgreSQL (см. раздел «Запуск PostgreSQL»)
+
+1. Запустите Minikube
+
+```bash
+minikube start
+```
+
+2. Включите Ingress-контроллер
+
+```bash
+minikube addons enable ingress
+```
+
+Дождитесь, пока поды ingress-nginx перейдут в состояние Running (`kubectl get pods -n ingress-nginx`).
+
+3. Создайте секрет с конфиденциальными данными
+
+Скопируйте файл-образец и отредактируйте его:
+
+```bash
+cp secrets.yaml.example secrets.yaml
+# отредактируйте secrets.yaml, указав свои значения
+```
+
+Затем примените секрет:
+
+```bash
+kubectl apply -f secrets.yaml
+```
+
+*`secrets.yaml` – уже добавлен в `.gitignore`.*
+
+4. Примените остальные манифесты
+
+```bash
+kubectl apply -f deployment.yaml
+kubectl apply -f service.yaml
+kubectl apply -f ingress.yaml
+```
+
+5. Примените миграции (если база новая)
+
+```bash
+kubectl exec -it deploy/django-app -- python manage.py migrate
+```
+
+6. Проверьте созданные ресурсы
+
+```bash
+kubectl get pods
+kubectl get services    # django-service должен быть типа ClusterIP
+kubectl get ingress     # должен быть указан адрес (например, 192.168.49.2)
+```
+
+7. Настройте локальный доступ к домену
+
+Узнайте IP-адрес Minikube:
+
+```bash
+minikube ip
+```
+
+Далее действия зависят от используемого драйвера Minikube:
+
+- **Для драйвера Docker** (по умолчанию на Windows):
+Ingress-контроллер становится доступен через локальный туннель. Выполните в отдельном терминале (не закрывайте его):
+
+```bash
+minikube service ingress-nginx-controller -n ingress-nginx
+```
+
+Эта команда откроет браузер и покажет локальный адрес вида http://127.0.0.1:xxxxx. Запомните порт (например, 60743).
+
+Отредактируйте файл `C:\Windows\System32\drivers\etc\hosts`.
+Для быстрого открытия выполните в PowerShell от имени администратора:
+
+```bash
+notepad C:\Windows\System32\drivers\etc\hosts
+```
+
+Добавьте в конец файла строку:
+
+```text
+127.0.0.1   star-burger.test
+```
+
+*Для Linux/macOS: отредактируйте файл /etc/hosts с правами суперпользователя:*
+
+```bash
+sudo nano /etc/hosts
+```
+
+- **Для драйвера VirtualBox** (или других гипервизоров):
+Ingress-контроллер доступен напрямую по IP Minikube (обычно 192.168.59.xxx).
+В файл hosts добавьте строку в конец файла и замените <IP_Minikube> на значение из minikube ip:
+
+```text
+<IP_Minikube>   star-burger.test
+```
+
+*Если вы хотите использовать другой домен, отредактируйте поле host в файле ingress.yaml перед применением манифеста.*
+
+После изменения hosts сбросьте кэш DNS:
+
+```bash
+ipconfig /flushdns
+```
+
+8. Откройте сайт
+
+- **Для драйвера Docker:** перейдите по адресу `http://star-burger.test:xxxxx/admin/` (подставьте порт из шага 6).
+- **Для драйвера VirtualBox:** перейдите по адресу `http://star-burger.test/admin/` (без порта).
+
+Вы должны увидеть страницу входа в админку Django.
+
+9. Создайте суперпользователя (если нужно)
+
+```bash
+kubectl exec -it deploy/django-app -- python manage.py createsuperuser
+```
+
+**Примечание:** При использовании драйвера Docker туннель нужно держать открытым всё время работы с сайтом. При каждом перезапуске Minikube порт может меняться – повторяйте шаг 6 для получения актуального адреса. Также при смене драйвера может измениться IP Minikube, и тогда нужно обновить hosts.
