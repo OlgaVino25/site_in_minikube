@@ -76,6 +76,24 @@ $ docker compose build web
 
 `DATABASE_URL` -- адрес для подключения к базе данных PostgreSQL. Другие СУБД сайт не поддерживает. [Формат записи](https://github.com/jacobian/dj-database-url#url-schema).
 
+## Запуск PostgreSQL (для Kubernetes)
+
+Перед развёртыванием Django в Kubernetes убедитесь, что запущен контейнер с PostgreSQL, к которому будет подключаться приложение. Выполните в терминале:
+
+```bash
+docker run -d --name postgres-local -p 5432:5432 \
+  -e POSTGRES_DB=test_k8s \
+  -e POSTGRES_USER=test_k8s \
+  -e POSTGRES_PASSWORD=OwOtBep9Frut \
+  postgres:12.0-alpine
+```
+
+Если контейнер уже создан, но остановлен, запустите его:
+
+```bash
+docker start postgres-local
+```
+
 ### Настройка секретов
 
 Перед применением манифестов необходимо создать Secret с конфиденциальными данными. Это можно сделать двумя способами:
@@ -92,6 +110,13 @@ $ docker compose build web
 kubectl create secret generic django-secrets \
   --from-literal=SECRET_KEY="your-secret-key" \
   --from-literal=DATABASE_URL="postgres://user:password@host:port/dbname"
+  --from-literal=ALLOWED_HOSTS="localhost,127.0.0.1,<minikube-ip>"
+
+# для powershell
+
+kubectl create secret generic django-secrets `
+  --from-literal=SECRET_KEY="your-secret-key" `
+  --from-literal=DATABASE_URL="postgres://user:password@host:port/dbname" `
   --from-literal=ALLOWED_HOSTS="localhost,127.0.0.1,<minikube-ip>"
 ```
 
