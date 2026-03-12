@@ -296,3 +296,34 @@ kubectl exec -it deploy/django-app -- python manage.py createsuperuser
 ```
 
 **Примечание:** При использовании драйвера Docker туннель нужно держать открытым всё время работы с сайтом. При каждом перезапуске Minikube порт может меняться – повторяйте шаг 6 для получения актуального адреса. Также при смене драйвера может измениться IP Minikube, и тогда нужно обновить hosts.
+
+## Очистка устаревших сессий Django
+
+Для автоматического удаления устаревших сессий используется CronJob, который запускает команду `python manage.py clearsessions` ежедневно в 02:00.
+
+1. Примените манифест:
+
+```bash
+kubectl apply -f cronjob.yaml
+```
+
+2. Проверьте создание CronJob:
+
+```bash
+kubectl get cronjobs
+```
+
+3. Для немедленного запуска (например, для теста) создайте Job вручную:
+
+```bash
+kubectl create job --from=cronjob/django-clearsessions-cronjob django-clearsessions-manual
+```
+
+4. Убедитесь, что Job выполнилась успешно:
+
+```bash
+kubectl get jobs
+kubectl logs <pod-name>
+```
+
+При желании можно изменить расписание, отредактировав поле `schedule` в `cronjob.yaml`.
