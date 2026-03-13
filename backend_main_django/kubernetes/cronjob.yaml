@@ -4,8 +4,10 @@ metadata:
   name: django-clearsessions-cronjob
 spec:
   schedule: "0 2 * * *"
+  startingDeadlineSeconds: 100
   jobTemplate:
     spec:
+      ttlSecondsAfterFinished: 600
       template:
         spec:
           restartPolicy: Never
