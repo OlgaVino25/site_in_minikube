@@ -214,10 +214,24 @@ kubectl apply -f service.yaml
 kubectl apply -f ingress.yaml
 ```
 
-5. Примените миграции (если база новая)
+5. Запустите миграции базы данных (если база новая или были изменения)
+Для этого используется отдельный Job-манифест `migrate-job.yaml`:
 
 ```bash
-kubectl exec -it deploy/django-app -- python manage.py migrate
+kubectl apply -f migrate-job.yaml
+```
+
+Следите за выполнением:
+
+```bash
+kubectl get jobs
+kubectl logs job/django-migrate
+```
+
+Job автоматически удалится через 10 минут после завершения (благодаря `ttlSecondsAfterFinished`). При желании можно удалить его вручную:
+
+```bash
+kubectl delete job django-migrate
 ```
 
 6. Проверьте созданные ресурсы
