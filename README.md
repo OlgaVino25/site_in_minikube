@@ -76,33 +76,50 @@ $ docker compose build web
 
 `DATABASE_URL` -- адрес для подключения к базе данных PostgreSQL. Другие СУБД сайт не поддерживает. [Формат записи](https://github.com/jacobian/dj-database-url#url-schema).
 
-## Запуск PostgreSQL (для Kubernetes)
+## Развёртывание PostgreSQL в кластере
 
-Перед развёртыванием Django в Kubernetes убедитесь, что запущен контейнер с PostgreSQL, к которому будет подключаться приложение. Выполните в терминале:
+Для работы сайта требуется база данных PostgreSQL. В этом проекте она разворачивается непосредственно в кластере Minikube с помощью Helm-чарта от Bitnami.
+
+**Установка PostgreSQL**
+
+1. Убедитесь, что Helm установлен (инструкция: [helm.sh](https://helm.sh/docs/intro/install/)).
+2. Выполните команду для установки PostgreSQL с заданными параметрами:
 
 ```bash
-# powershell
-docker run -d --name postgres-local -p 5432:5432 `
-  -e POSTGRES_DB=test_k8s `
-  -e POSTGRES_USER=test_k8s `
-  -e POSTGRES_PASSWORD=OwOtBep9Frut `
-  postgres:12.0-alpine
+# PowerShell (Windows)
+helm install my-postgres oci://registry-1.docker.io/bitnamicharts/postgresql `
+  --set auth.database=test_k8s `
+  --set auth.username=test_k8s `
+  --set auth.password=OwOtBep9Frut `
+  --set auth.postgresPassword=postgres123 `
+  --set persistence.enabled=false
 
 # Linux/macOS
-docker run -d --name postgres-local -p 5432:5432 \
-  -e POSTGRES_DB=test_k8s \
-  -e POSTGRES_USER=test_k8s \
-  -e POSTGRES_PASSWORD=OwOtBep9Frut \
-  postgres:12.0-alpine
+helm install my-postgres oci://registry-1.docker.io/bitnamicharts/postgresql \
+  --set auth.database=test_k8s \
+  --set auth.username=test_k8s \
+  --set auth.password=OwOtBep9Frut \
+  --set auth.postgresPassword=postgres123 \
+  --set persistence.enabled=false
 ```
 
-*Здесь используются тестовые учётные данные. При желании вы можете изменить их, но тогда не забудьте указать те же значения в секрете*
-
-Если контейнер уже создан, но остановлен, запустите его:
+3. Дождитесь запуска пода:
 
 ```bash
-docker start postgres-local
+kubectl get pods -w
 ```
+
+Под `my-postgres-postgresql-0` должен перейти в состояние `Running`.
+
+4. Проверьте подключение к базе от имени пользователя `test_k8s`:
+
+```bash
+kubectl run psql-client --rm -it --restart=Never --image=postgres:12.0-alpine --env="PGPASSWORD=OwOtBep9Frut" -- psql -h my-postgres-postgresql -U test_k8s -d test_k8s
+```
+
+Если появится приглашение `test_k8s=#` – всё работает. Выйдите `\q`.
+
+*Примечание: В учебных целях отключено постоянное хранилище (persistence.enabled=false). При перезапуске Minikube данные будут потеряны. Для продакшена следует настроить PersistentVolume.*
 
 ### Настройка секретов
 
@@ -130,11 +147,9 @@ ip route show default
 
 Найдите строку, начинающуюся с default via, и скопируйте следующий за ней IP-адрес. Выйдите из ssh командой exit.
 
-*В примерах замените <host-ip> на этот адрес (обычно 192.168.49.1 для драйвера Docker или 192.168.59.1 для VirtualBox).*
-
 **Вариант 1 (через файл, не коммитить):**
 
-1. Скопируйте `secrets.yaml.example` в `secrets.yaml` и заполните своими значениями.
+1. Скопируйте `secrets.yaml.example` и переименуйте в `secrets.yaml` и заполните своими значениями.
 2. Примените: `kubectl apply -f secrets.yaml`
 3. Убедитесь, что `secrets.yaml` добавлен в `.gitignore`.
 
@@ -143,14 +158,14 @@ ip route show default
 ```bash
 kubectl create secret generic django-secrets \
   --from-literal=SECRET_KEY="your-secret-key" \
-  --from-literal=DATABASE_URL="postgres://test_k8s:OwOtBep9Frut@<host-ip>:5432/test_k8s" \
+  --from-literal=DATABASE_URL="postgres://test_k8s:OwOtBep9Frut@my-postgres-postgresql.default.svc.cluster.local:5432/test_k8s" \
   --from-literal=ALLOWED_HOSTS="localhost,127.0.0.1,<minikube-ip>,star-burger.test"
 
 # для powershell
 
 kubectl create secret generic django-secrets `
   --from-literal=SECRET_KEY="your-secret-key" `
-  --from-literal=DATABASE_URL="postgres://test_k8s:OwOtBep9Frut@<host-ip>:5432/test_k8s" `
+  --from-literal=DATABASE_URL="postgres://test_k8s:OwOtBep9Frut@my-postgres-postgresql.default.svc.cluster.local:5432/test_k8s" `
   --from-literal=ALLOWED_HOSTS="localhost,127.0.0.1,<minikube-ip>,star-burger.test"
 ```
 
@@ -173,7 +188,7 @@ minikube service django-service
 
 - Установленный гипервизор или контейнерный движок (например, Docker Desktop или VirtualBox) в зависимости от выбранного драйвера Minikube
 - Minikube и kubectl
-- Запущенный контейнер PostgreSQL (см. раздел «Запуск PostgreSQL»)
+- PostgreSQL, развёрнутый в кластере (см. раздел "Развёртывание PostgreSQL в кластере").
 
 1. Запустите Minikube
 
